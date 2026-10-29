@@ -22,49 +22,24 @@ jobs:
         shell: bash
         run: |
           set -eu
+          echo "Java:"
+          command -v java
+          command -v javac
+          java -version
 
-          echo "Checking Java JDK..."
-          JAVAC="$(command -v javac || true)"
-          if [ -z "$JAVAC" ]; then
-            echo "ERROR: Java JDK / javac tidak ditemukan."
-            exit 1
-          fi
-
-          JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVAC")")")"
+          echo "Android SDK:"
+          echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
 
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          if [ -z "$SDK_ROOT" ] ||
-             [ ! -d "$SDK_ROOT/platforms" ]; then
-            SDK_ROOT=""
-            for p in \
-              /opt/android-sdk \
-              /root/android-sdk \
-              /usr/lib/android-sdk \
-              /opt/android-sdk-linux \
-              /usr/local/android-sdk
-            do
-              if [ -d "$p/platforms" ]; then
-                SDK_ROOT="$p"
-                break
-              fi
-            done
-          fi
-
-          if [ -z "$SDK_ROOT" ]; then
-            ANDROID_JAR="$(find / -type f -name android.jar 2>/dev/null | head -n 1 || true)"
-            if [ -n "$ANDROID_JAR" ]; then
-              SDK_ROOT="$(dirname "$(dirname "$(dirname "$ANDROID_JAR")")")"
-            fi
-          fi
-
-          if [ -z "$SDK_ROOT" ] ||
-             [ ! -d "$SDK_ROOT/platforms" ]; then
-            echo "ERROR: Android SDK tidak ditemukan."
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT/platforms" ]; then
+            echo "ERROR: Android SDK tidak ditemukan di lokasi standar."
+            find / -type f -name android.jar 2>/dev/null | head -n 10 || true
             exit 1
           fi
 
-          echo "Java: $JAVA_HOME"
-          echo "Android SDK: $SDK_ROOT"
+          JAVAC="$(command -v javac)"
+          JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVAC")")")"
 
           mkdir -p "$HOME/.config/godot"
           cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
@@ -85,13 +60,6 @@ jobs:
             -keysize 2048 \
             -validity 10000
 
-          cat >> export_presets.cfg <<'PRESET'
-
-          keystore/debug="/tmp/hamster-debug.keystore"
-          keystore/debug_user="androiddebugkey"
-          keystore/debug_password="android"
-          PRESET
-
       - name: Prepare Godot project
         run: |
           mkdir -p ~/.local/share/godot/export_templates
@@ -102,6 +70,10 @@ jobs:
           godot --headless --path . --editor --import --quit
 
       - name: Export Android APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /tmp/hamster-debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           godot --headless --path . --export-debug "Android" build/HamsterRollNative.apk
           test -s build/HamsterRollNative.apk
