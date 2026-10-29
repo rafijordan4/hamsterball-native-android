@@ -13,11 +13,86 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.5
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare Godot project and Android export
+      - name: Configure Android export
+        shell: bash
+        run: |
+          set -eu
+
+          echo "Checking Java JDK..."
+          JAVAC="$(command -v javac || true)"
+          if [ -z "$JAVAC" ]; then
+            echo "ERROR: Java JDK / javac tidak ditemukan."
+            exit 1
+          fi
+
+          JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVAC")")")"
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ] ||
+             [ ! -d "$SDK_ROOT/platforms" ]; then
+            SDK_ROOT=""
+            for p in \
+              /opt/android-sdk \
+              /root/android-sdk \
+              /usr/lib/android-sdk \
+              /opt/android-sdk-linux \
+              /usr/local/android-sdk
+            do
+              if [ -d "$p/platforms" ]; then
+                SDK_ROOT="$p"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$SDK_ROOT" ]; then
+            ANDROID_JAR="$(find / -type f -name android.jar 2>/dev/null | head -n 1 || true)"
+            if [ -n "$ANDROID_JAR" ]; then
+              SDK_ROOT="$(dirname "$(dirname "$(dirname "$ANDROID_JAR")")")"
+            fi
+          fi
+
+          if [ -z "$SDK_ROOT" ] ||
+             [ ! -d "$SDK_ROOT/platforms" ]; then
+            echo "ERROR: Android SDK tidak ditemukan."
+            exit 1
+          fi
+
+          echo "Java: $JAVA_HOME"
+          echo "Android SDK: $SDK_ROOT"
+
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/android_sdk_path = "$SDK_ROOT"
+          EOF
+
+          keytool -genkeypair \
+            -keystore /tmp/hamster-debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
+          cat >> export_presets.cfg <<'PRESET'
+
+          keystore/debug="/tmp/hamster-debug.keystore"
+          keystore/debug_user="androiddebugkey"
+          keystore/debug_password="android"
+          PRESET
+
+      - name: Prepare Godot project
         run: |
           mkdir -p ~/.local/share/godot/export_templates
           if [ -d "/root/.local/share/godot/export_templates/4.5.stable" ]; then
